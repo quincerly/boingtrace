@@ -19,11 +19,12 @@ def ImageGrid(w, h, xr=None, yr=None):
 
 """Create RGB image with colour set to rgb0+im*(rgb-rgb0)"""
 def ImageToRGB(im, rgb0=[0, 0, 0], rgb=[0, 1, 0]):
+    maxfac=im.max() if im.max()>1 else 1 # Limit maximum to <=1
     h, w=im.shape
     imrgb=np.zeros((h, w, 3))
     for icomp in range(3):
         imrgb[:, :, icomp]+=rgb0[icomp]+im*(rgb[icomp]-rgb0[icomp])
-    return imrgb
+    return imrgb/maxfac
 
 def Boing():
 
