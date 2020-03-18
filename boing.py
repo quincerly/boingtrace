@@ -122,12 +122,15 @@ def Boing():
     dtheta=np.pi/10
     iphi=np.floor(phi/dphi).astype(int)
     itheta=np.floor(theta/dtheta).astype(int)
-    red=intersects*np.mod(iphi+itheta, 2)*1.*lfac
+    wbg=np.where(np.logical_not(intersects))
+    red=intersects*np.mod(iphi+itheta, 2)*lfac
+    red[wbg]=0
     redimage=ImageToRGB(red, rgb=[1, 0, 0], rgb0=[0, 0, 0])
-    white=intersects*np.mod(iphi+itheta+1, 2)*1.*lfac
+    white=intersects*np.mod(iphi+itheta+1, 2)*lfac
+    white[wbg]=0
     whiteimage=ImageToRGB(white, rgb=[1, 1, 1], rgb0=[0, 0, 0])
-    bg=np.zeros_like(intersects)
-    bg[np.where(np.logical_not(intersects))]=0.5
+    bg=np.zeros_like(intersects, dtype=float)
+    bg[wbg]=0.05
     bgimage=ImageToRGB(bg, rgb=[0, 1, 0], rgb0=[0, 0, 0])
     ax.imshow(redimage+whiteimage+bgimage,
               interpolation='nearest',
