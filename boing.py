@@ -17,15 +17,6 @@ def ImageGrid(w, h, xr=None, yr=None):
     y=(y+0.5)/h*(yr[1]-yr[0])+yr[0]
     return x, y
 
-"""Create RGBA image with colour rgb and alpha channel set to im"""
-def ImageToRGBA(im, rgb=[1, 0, 0]):
-    h, w=im.shape
-    imrgba=np.zeros((h, w, 4))
-    for icomp in range(3):
-        imrgba[:, :, icomp]=rgb[icomp]*np.ones((h, w))
-    imrgba[:, :, 3]=im
-    return imrgba
-
 """Create RGB image with colour set to rgb0+im*(rgb-rgb0)"""
 def ImageToRGB(im, rgb0=[0, 0, 0], rgb=[0, 1, 0]):
     h, w=im.shape
@@ -33,21 +24,6 @@ def ImageToRGB(im, rgb0=[0, 0, 0], rgb=[0, 1, 0]):
     for icomp in range(3):
         imrgb[:, :, icomp]+=rgb0[icomp]+im*(rgb[icomp]-rgb0[icomp])
     return imrgb
-
-"""Return Matplotlib RGB tuple for matplotlib colour name/rgb tuple/hex string""" 
-def ColourToRGB(colour):
-    result=None
-    if type(colour)==tuple and len(colour)==3:
-        result=colour
-    elif matplotlib.colors.ColorConverter.colors.has_key(colour):
-        result=matplotlib.colors.ColorConverter.colors[colour]
-    elif matplotlib.colors.cnames.has_key(colour):
-        result=matplotlib.colors.hex2color(matplotlib.colors.cnames[colour])
-    elif type(colour)==str and colour[0]=='#':
-        result=matplotlib.colors.hex2color(colour)
-    else:
-        raise RuntimeError("Unrecognised colour '%s'" % str(colour))
-    return result
 
 def Boing():
 
