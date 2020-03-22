@@ -46,20 +46,26 @@ def Boing():
     #
 
     C=np.array([0, 0, 0]) # Camera location
-    B=np.array([0, 150, 0]) # Centre of ball
-    #L=np.array([0, 150, 50]) # Point source light
-    #L=np.array([50, 50, 50]) # Point source light
-    L=np.array([5, 145, 5]) # Point source light
-    #B=np.array([3, 10, 4]) # Centre of ball
+    B=np.array([0, 150, -4]) # Centre of ball
+    L=np.array([5, 130, 5]) # Point source light
+
+    Go=np.array([0, 0, -5]) # Ground pass through this point
+    Gn=np.array([0, 0, 1]) # Unit normal to ground
+
     ball_radius=5
 
-    w=500
-    h=500
-    #w=10
-    #h=10
+    w=2000
+    h=2000
+
+    #w=160
+    #h=160
     thetaHr=np.array([-1, 1])*5/100
     thetaVr=np.array([-1, 1])*5/100
     thetaH, thetaV=ImageGrid(w, h, xr=thetaHr, yr=thetaVr) # Angle at each image location (radians)
+
+    #zoom_sigma=3
+    #zoom_amp=3
+    #thetaH, thetaV+=zoom_amp*np.exp(-(thetaH**2+thetaV**2)/2*zoom_sigma^2)
 
     tan_thetaH=np.tan(thetaH)
     tan_thetaV=np.tan(thetaV)
@@ -68,6 +74,12 @@ def Boing():
     Ry=np.sqrt(1/(1+tan_thetaH**2+tan_thetaV**2))
     Rx=Ry*tan_thetaH
     Rz=Ry*tan_thetaV
+
+    # Lambda for where ray intersects ground
+    lambda_ground=np.sum((Go-C)*Gn)/(Rx*Gn[0]+Ry*Gn[1]+Rz*Gn[2])
+
+    # If ray intersects ground
+    intersects_ground=(lambda_ground > 0) & np.isfinite(lambda_ground)
 
     BC=C-B
 
@@ -78,18 +90,26 @@ def Boing():
     BPy=BC[1]-RdotBC*Ry
     BPz=BC[2]-RdotBC*Rz
     magBP=BPx**2+BPy**2+BPz**2
-    intersects=magBP <= ball_radius**2
 
-    # Lowest of two lambda values for location where rays intersects with surface of ball
+    # If ray intersecs ball
+    intersects_ball=magBP <= ball_radius**2
+
+    # Lowest of two lambda values for location where rays intersect with surface of ball
     beta=np.sqrt(RdotBC**2-np.linalg.norm(BC)**2+ball_radius**2) # Second term of quadratic eqn soln
-    if not np.array_equal(intersects, np.isfinite(beta)):
+    if not np.array_equal(intersects_ball, np.isfinite(beta)):
         raise RuntimeError("Expected intersections tests to be identical") # Sanity check
-    lambda_intersect=-RdotBC-beta
+    lambda_ball=-RdotBC-beta
+
+    intersects_ground_only=intersects_ground & np.logical_not(intersects_ball)
+    intersects_ball_only=intersects_ball & np.logical_not(intersects_ground)
+    intersects_ball_and_ground=intersects_ball & intersects_ground
+    intersects_ball_first=intersects_ball_only | (intersects_ball_and_ground & (lambda_ball <= lambda_ground))
+    intersects_ground_first=intersects_ground_only | (intersects_ball_and_ground & (lambda_ball > lambda_ground))
 
     # S = first (closest to camera) location where ray intersects surface of ball
-    Sx=C[0]+lambda_intersect*Rx
-    Sy=C[1]+lambda_intersect*Ry
-    Sz=C[2]+lambda_intersect*Rz
+    Sx=C[0]+lambda_ball*Rx
+    Sy=C[1]+lambda_ball*Ry
+    Sz=C[2]+lambda_ball*Rz
 
     # SL
     SLx=Sx-L[0]
@@ -118,21 +138,33 @@ def Boing():
     # If normal not pointing towards light then no illumination
     lfac[lfac<0]=0
 
+    # Pattern on ball
     dphi=np.pi/10
     dtheta=np.pi/10
     iphi=np.floor(phi/dphi).astype(int)
     itheta=np.floor(theta/dtheta).astype(int)
-    wbg=np.where(np.logical_not(intersects))
-    red=intersects*np.mod(iphi+itheta, 2)*lfac
-    red[wbg]=0
-    redimage=ImageToRGB(red, rgb=[1, 0, 0], rgb0=[0, 0, 0])
-    white=intersects*np.mod(iphi+itheta+1, 2)*lfac
-    white[wbg]=0
-    whiteimage=ImageToRGB(white, rgb=[1, 1, 1], rgb0=[0, 0, 0])
-    bg=np.zeros_like(intersects, dtype=float)
-    bg[wbg]=0.05
-    bgimage=ImageToRGB(bg, rgb=[0, 1, 0], rgb0=[0, 0, 0])
-    ax.imshow(redimage+whiteimage+bgimage,
+    w_noball=np.where(np.logical_not(intersects_ball_first))
+    red_ball=intersects_ball_first*np.mod(iphi+itheta, 2)*lfac
+    red_ball[w_noball]=0
+    white_ball=intersects_ball_first*np.mod(iphi+itheta+1, 2)*lfac
+    white_ball[w_noball]=0
+
+    # Point of intersection with ground
+    Gx=C[0]+lambda_ground*Rx
+    Gy=C[1]+lambda_ground*Ry
+    Gz=C[2]+lambda_ground*Rz
+
+    dx=3
+    dy=10
+    ix=np.floor(Gx/dx).astype(int)
+    iy=np.floor(Gy/dy).astype(int)
+    ground=intersects_ground_first*np.mod(ix+iy, 2)
+
+    ground_image=ImageToRGB(ground, rgb=[0, 0.3, 0], rgb0=[0, 0, 0])
+    red_ballimage=ImageToRGB(red_ball, rgb=[1, 0, 0], rgb0=[0, 0, 0])
+    white_ballimage=ImageToRGB(white_ball, rgb=[1, 1, 1], rgb0=[0, 0, 0])
+
+    ax.imshow(red_ballimage+white_ballimage+ground_image,
               interpolation='nearest',
               extent=[thetaHr[0], thetaHr[1], thetaVr[0], thetaVr[1]],
               origin='lower')
