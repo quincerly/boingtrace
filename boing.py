@@ -49,9 +49,26 @@ class Ground:
         Gy=C[1]+self.lmbda*Ry
         Gz=C[2]+self.lmbda*Rz
 
+        # GL
+        GLx=L[0]-Gx
+        GLy=L[1]-Gy
+        GLz=L[2]-Gz
+        magGL2=GLx**2+GLy**2+GLz**2
+        magGL=np.sqrt(magGL2)
+
+        # alpha = angle between normal to surface (outwards) and line from surface to L
+        cosalpha=-(self.n[0]*GLx+self.n[1]*GLy+self.n[2]*GLz)/magGL
+
+        # Illumination of surface by light 1/R2 law and projection effect of angle
+        lfac=cosalpha/magGL2
+        lfac/=np.nanmax(lfac) # Normalise so max is 1
+
+        # If normal not pointing towards light then no illumination
+        lfac[lfac<0]=0
+
         ix=np.floor(Gx/self.dx).astype(int)
         iy=np.floor(Gy/self.dy).astype(int)
-        ground=intersects_ground_first*np.mod(ix+iy, 2)
+        ground=intersects_ground_first*np.mod(ix+iy, 2)*lfac
 
         ground_image=ImageToRGB(ground, rgb=[0, 0.3, 0], rgb0=[0, 0, 0])
         return ground_image
