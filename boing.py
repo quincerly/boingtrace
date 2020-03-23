@@ -26,6 +26,31 @@ def ImageToRGB(im, rgb0=[0, 0, 0], rgb=[0, 1, 0]):
         imrgb[:, :, icomp]+=rgb0[icomp]+im*(rgb[icomp]-rgb0[icomp])
     return imrgb/maxfac
 
+class Light:
+    def __init__(self, location):
+        self.location=location
+
+    def illuminate(self, x, y, z, nx, ny, nz):
+        # d
+        dx=self.location[0]-x
+        dy=self.location[1]-y
+        dz=self.location[2]-z
+        magd2=dx**2+dy**2+dz**2
+        magd=np.sqrt(magd2)
+        magn=np.sqrt(nx**2+ny**2+nz**2)
+
+        # alpha = angle between normal to surface (outwards) and line from surface to L
+        cosalpha=(nx*dx+ny*dy+nz*dz)/(magd*magn)
+
+        # Illumination of surface by light 1/R2 law and projection effect of angle
+        lfac=cosalpha/magd2
+        lfac/=np.nanmax(lfac) # Normalise so max is 1
+
+        # If normal not pointing towards light then no illumination
+        lfac[lfac<0]=0
+
+        return lfac
+
 class Ground:
     def __init__(self, point, normal, dx=3, dy=10):
         self.o=point # Ground passes through this point
@@ -43,28 +68,13 @@ class Ground:
         self.intersects=intersects_ground
         self.lmbda=lambda_ground
 
-    def image(self, C, Rx, Ry, Rz, L, intersects_ground_first):
+    def image(self, C, Rx, Ry, Rz, light, intersects_ground_first):
         # Point of intersection with ground
         Gx=C[0]+self.lmbda*Rx
         Gy=C[1]+self.lmbda*Ry
         Gz=C[2]+self.lmbda*Rz
 
-        # GL
-        GLx=L[0]-Gx
-        GLy=L[1]-Gy
-        GLz=L[2]-Gz
-        magGL2=GLx**2+GLy**2+GLz**2
-        magGL=np.sqrt(magGL2)
-
-        # alpha = angle between normal to surface (outwards) and line from surface to L
-        cosalpha=-(self.n[0]*GLx+self.n[1]*GLy+self.n[2]*GLz)/magGL
-
-        # Illumination of surface by light 1/R2 law and projection effect of angle
-        lfac=cosalpha/magGL2
-        lfac/=np.nanmax(lfac) # Normalise so max is 1
-
-        # If normal not pointing towards light then no illumination
-        lfac[lfac<0]=0
+        lfac=light.illuminate(Gx, Gy, Gz, self.n[0], self.n[1], self.n[2]) 
 
         ix=np.floor(Gx/self.dx).astype(int)
         iy=np.floor(Gy/self.dy).astype(int)
@@ -103,38 +113,23 @@ class Ball:
         self.intersects=intersects_ball
         self.lmbda=lambda_ball
 
-    def image(self, C, Rx, Ry, Rz, L, intersects_ball_first):
+    def image(self, C, Rx, Ry, Rz, light, intersects_ball_first):
         # S = first (closest to camera) location where ray intersects surface of ball
         Sx=C[0]+self.lmbda*Rx
         Sy=C[1]+self.lmbda*Ry
         Sz=C[2]+self.lmbda*Rz
 
-        # SL
-        SLx=Sx-L[0]
-        SLy=Sy-L[1]
-        SLz=Sz-L[2]
-
-        # SB
+        # BS
         SBx=Sx-self.centre[0]
         SBy=Sy-self.centre[1]
         SBz=Sz-self.centre[2]
         phi=np.arctan2(SBy, SBx)
         theta=np.arctan2(SBz, np.sqrt(SBx**2+SBy**2))
 
-        # Normal to surface at S
-        magSB=np.sqrt(SBx**2+SBy**2+SBz**2)
-        magSL2=SLx**2+SLy**2+SLz**2
-        magSL=np.sqrt(magSL2)
-
-        # alpha = angle between normal to surface (outwards) and line from surface to L
-        cosalpha=-(SBx*SLx+SBy*SLy+SBz*SLz)/(magSB*magSL)
-
-        # Illumination of surface by light 1/R2 law and projection effect of angle
-        lfac=cosalpha/magSL2
-        lfac/=np.nanmax(lfac) # Normalise so max is 1
-
-        # If normal not pointing towards light then no illumination
-        lfac[lfac<0]=0
+        lfac=light.illuminate(Sx, Sy, Sz,
+                              SBx,
+                              SBy,
+                              SBz)
 
         # Pattern on ball
         iphi=np.floor(phi/self.dphi).astype(int)
@@ -170,8 +165,8 @@ def Boing():
     #
 
     C=np.array([0, 0, 0]) # Camera location
-    L=np.array([5, 130, 5]) # Point source light
 
+    light=Light(np.array([10, 130, 5]))
     ground=Ground(point=np.array([0, 0, -5]), normal=np.array([0, 0, 1]))
     ball=Ball(centre=np.array([0, 150, -1.5]), radius=5)
 
@@ -180,8 +175,8 @@ def Boing():
 
     #w=160
     #h=160
-    thetaHr=np.array([-1, 1])*5/100
-    thetaVr=np.array([-1, 1])*5/100
+    thetaHr=np.array([-1, 1])*7/100
+    thetaVr=np.array([-1, 1])*7/100
     thetaH, thetaV=ImageGrid(w, h, xr=thetaHr, yr=thetaVr) # Angle at each image location (radians)
 
     #zoom_sigma=3
@@ -205,8 +200,8 @@ def Boing():
     intersects_ball_first=intersects_ball_only | (intersects_ball_and_ground & (ball.lmbda <= ground.lmbda))
     intersects_ground_first=intersects_ground_only | (intersects_ball_and_ground & (ball.lmbda > ground.lmbda))
 
-    ground_image=ground.image(C, Rx, Ry, Rz, L, intersects_ground_first)
-    ball_image=ball.image(C, Rx, Ry, Rz, L, intersects_ball_first)
+    ground_image=ground.image(C, Rx, Ry, Rz, light, intersects_ground_first)
+    ball_image=ball.image(C, Rx, Ry, Rz, light, intersects_ball_first)
 
 
     ax.imshow(ball_image+ground_image,
