@@ -26,6 +26,12 @@ def ImageToRGB(im, rgb0=[0, 0, 0], rgb=[0, 1, 0]):
         imrgb[:, :, icomp]+=rgb0[icomp]+im*(rgb[icomp]-rgb0[icomp])
     return imrgb/maxfac
 
+def Cross(ax, ay, az, bx, by, bz):
+    return ay*bz-by*az, az*bx-bz*ax, ax*by-bx*ay
+
+def PointOnLine(lmbda, A, B):
+    return A[0]+lmbda*B[0], A[1]+lmbda*B[1], A[2]+lmbda*B[2]
+
 class Light:
     def __init__(self, location):
         self.location=location
@@ -54,7 +60,7 @@ class Light:
 class Ground:
     def __init__(self, point, normal, dx=3, dy=10):
         self.o=point # Ground passes through this point
-        self.n=normal # Unit normal to ground
+        self.n=normal/np.sqrt(np.sum(normal**2)) # Unit normal to ground
         self.dx=dx
         self.dy=dy
 
@@ -65,14 +71,11 @@ class Ground:
         # If ray intersects ground
         intersects_ground=(lambda_ground > 0) & np.isfinite(lambda_ground)
 
-        self.intersects=intersects_ground
-        self.lmbda=lambda_ground
+        return intersects_ground, lambda_ground
 
-    def image(self, C, Rx, Ry, Rz, light, intersects_ground_first):
-        # Point of intersection with ground
-        Gx=C[0]+self.lmbda*Rx
-        Gy=C[1]+self.lmbda*Ry
-        Gz=C[2]+self.lmbda*Rz
+    def image(self, G_points, light, intersects_ground_first):
+        # G_points = points of intersection of rays with ground
+        Gx, Gy, Gz=G_points
 
         lfac=light.illuminate(Gx, Gy, Gz, self.n[0], self.n[1], self.n[2]) 
 
@@ -82,6 +85,21 @@ class Ground:
 
         ground_image=ImageToRGB(ground, rgb=[0, 0.3, 0], rgb0=[0, 0, 0])
         return ground_image
+
+    def reflect(self, R1x, R1y, R1z):
+        R2_perp_mag=-(R1x*self.n[0]+R1y*self.n[1]+R1z*self.n[2])
+        R2_perp_x=R2_perp_mag*self.n[0]
+        R2_perp_y=R2_perp_mag*self.n[1]
+        R2_perp_z=R2_perp_mag*self.n[2]
+        R1_mag=R1x**2+R1y**2+R1z**2
+        R1_cross_n=Cross(R1x/R1_mag, R1y/R1_mag, R1z/R1_mag, self.n[0], self.n[1], self.n[2])
+        R1_cross_n_cross_n=Cross(R1_cross_n[0], R1_cross_n[1], R1_cross_n[2], self.n[0], self.n[1], self.n[2])
+        R2_parallel_mag=(R1x*R1_cross_n_cross_n[0]+R1y*R1_cross_n_cross_n[1]+R1z*R1_cross_n_cross_n[2])
+        R2_parallel_x=R2_parallel_mag*R1_cross_n_cross_n[0]
+        R2_parallel_y=R2_parallel_mag*R1_cross_n_cross_n[1]
+        R2_parallel_z=R2_parallel_mag*R1_cross_n_cross_n[2]
+        R2=R2_perp_x+R2_parallel_x, R2_perp_y+R2_parallel_y, R2_perp_z+R2_parallel_z
+        return R2
 
 class Ball:
     def __init__(self, centre, radius, dphi=np.pi/10, dtheta=np.pi/10):
@@ -110,14 +128,11 @@ class Ball:
             raise RuntimeError("Expected intersections tests to be identical") # Sanity check
         lambda_ball=-RdotBC-beta
 
-        self.intersects=intersects_ball
-        self.lmbda=lambda_ball
+        return intersects_ball, lambda_ball
 
-    def image(self, C, Rx, Ry, Rz, light, intersects_ball_first):
-        # S = first (closest to camera) location where ray intersects surface of ball
-        Sx=C[0]+self.lmbda*Rx
-        Sy=C[1]+self.lmbda*Ry
-        Sz=C[2]+self.lmbda*Rz
+    def image(self, S_points, light, intersects_ball_first):
+        # S_points = first (closest to camera) points where ray intersects surface of ball
+        Sx, Sy, Sz=S_points
 
         # BS
         SBx=Sx-self.centre[0]
@@ -164,11 +179,11 @@ def Boing():
     #  |/_______________ X
     #
 
-    C=np.array([0, 0, 0]) # Camera location
-
     light=Light(np.array([10, 130, 5]))
     ground=Ground(point=np.array([0, 0, -5]), normal=np.array([0, 0, 1]))
     ball=Ball(centre=np.array([0, 150, -1.5]), radius=5)
+
+    C=np.array([0, 0, 0]) # Camera location
 
     w=2000
     h=2000
@@ -191,17 +206,22 @@ def Boing():
     Rx=Ry*tan_thetaH
     Rz=Ry*tan_thetaV
 
-    ground.check(C, Rx, Ry, Rz)
-    ball.check(C, Rx, Ry, Rz)
+    ground_intersects, ground_lambda=ground.check(C, Rx, Ry, Rz)
+    ball_intersects, ball_lambda=ball.check(C, Rx, Ry, Rz)
 
-    intersects_ground_only=ground.intersects & np.logical_not(ball.intersects)
-    intersects_ball_only=ball.intersects & np.logical_not(ground.intersects)
-    intersects_ball_and_ground=ball.intersects & ground.intersects
-    intersects_ball_first=intersects_ball_only | (intersects_ball_and_ground & (ball.lmbda <= ground.lmbda))
-    intersects_ground_first=intersects_ground_only | (intersects_ball_and_ground & (ball.lmbda > ground.lmbda))
+    intersects_ground_only=ground_intersects & np.logical_not(ball_intersects)
+    intersects_ball_only=ball_intersects & np.logical_not(ground_intersects)
+    intersects_ball_and_ground=ball_intersects & ground_intersects
+    intersects_ball_first=intersects_ball_only | (intersects_ball_and_ground & (ball_lambda <= ground_lambda))
+    intersects_ground_first=intersects_ground_only | (intersects_ball_and_ground & (ball_lambda > ground_lambda))
 
-    ground_image=ground.image(C, Rx, Ry, Rz, light, intersects_ground_first)
-    ball_image=ball.image(C, Rx, Ry, Rz, light, intersects_ball_first)
+    Rref=ground.reflect(Rx, Ry, Rz)
+
+    G_points=PointOnLine(ground_lambda, C, [Rx, Ry, Rz])
+    ground_image=ground.image(G_points,
+                              light, intersects_ground_first)
+    ball_image=ball.image(PointOnLine(ball_lambda, C, [Rx, Ry, Rz]),
+                          light, intersects_ball_first)
 
 
     ax.imshow(ball_image+ground_image,
