@@ -64,9 +64,9 @@ class Ground:
         self.dx=dx
         self.dy=dy
 
-    def check(self, C, Rx, Ry, Rz):
+    def check(self, camera_location, Rx, Ry, Rz):
         # Lambda for where ray intersects ground
-        lambda_ground=np.sum((self.o-C)*self.n)/(Rx*self.n[0]+Ry*self.n[1]+Rz*self.n[2])
+        lambda_ground=np.sum((self.o-camera_location)*self.n)/(Rx*self.n[0]+Ry*self.n[1]+Rz*self.n[2])
 
         # If ray intersects ground
         intersects_ground=(lambda_ground > 0) & np.isfinite(lambda_ground)
@@ -108,8 +108,8 @@ class Ball:
         self.dphi=dphi
         self.dtheta=dtheta
 
-    def check(self, C, Rx, Ry, Rz):
-        BC=C[0]-self.centre[0], C[1]-self.centre[1], C[2]-self.centre[2]
+    def check(self, camera_location, Rx, Ry, Rz):
+        BC=camera_location[0]-self.centre[0], camera_location[1]-self.centre[1], camera_location[2]-self.centre[2]
 
         wok=np.where(np.isfinite(Rx+BC[0]+Ry+BC[1]+Rz+BC[2]))
         RdotBC=Rx*BC[0]+Ry*BC[1]+Rz*BC[2]
@@ -189,7 +189,7 @@ def Boing():
     ground=Ground(point=np.array([0, 0, -5]), normal=np.array([0, 0, 1]), dx=1, dy=2)
     ball=Ball(centre=np.array([0, 150, -1.5]), radius=5)
     ground_reflectivity=0.2
-    C=np.array([0, 0, 0]) # Camera location
+    camera_location=np.array([0, 0, 0]) # Camera location
 
     w=500 # Image pixel grid width
     h=500 # Image pixel grid height
@@ -202,13 +202,13 @@ def Boing():
     tan_thetaH=np.tan(thetaH)
     tan_thetaV=np.tan(thetaV)
 
-    # Ray for each image location has eqn r = C + lambda * [Rx, Ry, Rz]
+    # Ray for each image location has eqn r = camera_location + lambda * [Rx, Ry, Rz]
     Ry=np.sqrt(1/(1+tan_thetaH**2+tan_thetaV**2))
     Rx=Ry*tan_thetaH
     Rz=Ry*tan_thetaV
 
-    ground_intersects, ground_lambda=ground.check(C, Rx, Ry, Rz)
-    ball_intersects, ball_lambda=ball.check(C, Rx, Ry, Rz)
+    ground_intersects, ground_lambda=ground.check(camera_location, Rx, Ry, Rz)
+    ball_intersects, ball_lambda=ball.check(camera_location, Rx, Ry, Rz)
 
     intersects_ground_only=ground_intersects & np.logical_not(ball_intersects)
     intersects_ball_only=ball_intersects & np.logical_not(ground_intersects)
@@ -216,15 +216,15 @@ def Boing():
     intersects_ball_first=intersects_ball_only | (intersects_ball_and_ground & (ball_lambda <= ground_lambda))
     intersects_ground_first=intersects_ground_only | (intersects_ball_and_ground & (ball_lambda > ground_lambda))
 
-    Rref=ground.reflect(Rx, Ry, Rz)
+    Rref=ground.reflect(Rx, Ry, Rz) # Camera ray directions reflected by the ground
 
-    ground_points=PointOnLine(ground_lambda, C, [Rx, Ry, Rz])
+    ground_points=PointOnLine(ground_lambda, camera_location, [Rx, Ry, Rz])
     ground_reflects_ball, ground_ball_reflection_lambda=ball.check(ground_points, Rref[0], Rref[1], Rref[2])
     ground_ball_reflection_points=PointOnLine(ground_ball_reflection_lambda, ground_points, Rref)
 
     ground_image=ground.image(ground_points,
                               light, intersects_ground_first)
-    ball_image=ball.image(PointOnLine(ball_lambda, C, [Rx, Ry, Rz]),
+    ball_image=ball.image(PointOnLine(ball_lambda, camera_location, [Rx, Ry, Rz]),
                           light, intersects_ball_first)
     ground_image[ground_reflects_ball]*=(1.-ground_reflectivity)
     ground_ball_reflection_image=ball.image(ground_ball_reflection_points, light, ground_reflects_ball)
