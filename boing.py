@@ -26,17 +26,36 @@ def ImageToRGB(im, rgb0=[0, 0, 0], rgb=[0, 1, 0]):
         imrgb[:, :, icomp]+=rgb0[icomp]+im*(rgb[icomp]-rgb0[icomp])
     return imrgb/maxfac
 
-def Cross(ax, ay, az, bx, by, bz):
-    return ay*bz-by*az, az*bx-bz*ax, ax*by-bx*ay
+# Vectors are tuples/dicts of x, y, z components. Component can be ndarrays to represent multiple vectors for elementwise calculation.
 
+"""Return vector (cross) product A * B of vectors A, B."""
+def Cross(A, B):
+    return A[1]*B[2]-B[1]*A[2], A[2]*B[0]-B[2]*A[0], A[0]*B[1]-B[0]*A[1]
+
+"""Return vector V = A + lmbda * B where lmbda is scalar (can be ndarray for elementwise calculation)."""
 def PointOnLine(lmbda, A, B):
     return A[0]+lmbda*B[0], A[1]+lmbda*B[1], A[2]+lmbda*B[2]
 
+"""Normalise RGB image (as from ImageToRGB()) so that maximum in any channel is 1. If no channel exceeds 1 it is left unchanged."""
 def ImNorm(image):
-    fac=1
-    if image.max()>1:
-        fac=1./image.max()
-    return image*fac
+    return image/image.max()
+
+"""Return magnitude**2 of vector V."""
+def Magnitude2(V):
+    return V[0]**2+V[1]**2+V[2]**2
+
+"""Return magnitude of vector V."""
+def Magnitude(V):
+    return np.sqrt(Magnitude2(V))
+
+"""Return vector V/Magnitude(V)."""
+def NormaliseVector(V):
+    mag=Magnitude(V[0], V[1], V[2])
+    return V[0]/mag, V[1]/mag, V[2]/mag
+
+"""Return vector A-B."""
+def DiffVector(A, B):
+    return A[0]-B[0], A[1]-B[1], A[2]-B[2]
 
 class Light:
     def __init__(self, location):
@@ -44,12 +63,10 @@ class Light:
 
     def illuminate(self, x, y, z, nx, ny, nz):
         # d
-        dx=self.location[0]-x
-        dy=self.location[1]-y
-        dz=self.location[2]-z
-        magd2=dx**2+dy**2+dz**2
+        dx, dy, dz=DiffVector(self.location, [x, y, z])
+        magd2=Magnitude2([dx, dy, dz])
         magd=np.sqrt(magd2)
-        magn=np.sqrt(nx**2+ny**2+nz**2)
+        magn=Magnitude([nx, ny, nz])
 
         # alpha = angle between normal to surface (outwards) and line from surface to L
         cosalpha=(nx*dx+ny*dy+nz*dz)/(magd*magn)
@@ -66,7 +83,7 @@ class Light:
 class Ground:
     def __init__(self, point, normal, dx=3, dy=10):
         self.o=point # Ground passes through this point
-        self.n=normal/np.sqrt(np.sum(normal**2)) # Unit normal to ground
+        self.n=normal/Magnitude(normal) # Unit normal to ground
         self.dx=dx
         self.dy=dy
 
@@ -97,9 +114,9 @@ class Ground:
         R2_perp_x=R2_perp_mag*self.n[0]
         R2_perp_y=R2_perp_mag*self.n[1]
         R2_perp_z=R2_perp_mag*self.n[2]
-        R1_mag=R1x**2+R1y**2+R1z**2
-        R1_cross_n=Cross(R1x/R1_mag, R1y/R1_mag, R1z/R1_mag, self.n[0], self.n[1], self.n[2])
-        R1_cross_n_cross_n=Cross(R1_cross_n[0], R1_cross_n[1], R1_cross_n[2], self.n[0], self.n[1], self.n[2])
+        R1_mag2=Magnitude2([R1x, R1y, R1z])
+        R1_cross_n=Cross([R1x/R1_mag2, R1y/R1_mag2, R1z/R1_mag2], self.n)
+        R1_cross_n_cross_n=Cross(R1_cross_n, self.n)
         R2_parallel_mag=(R1x*R1_cross_n_cross_n[0]+R1y*R1_cross_n_cross_n[1]+R1z*R1_cross_n_cross_n[2])
         R2_parallel_x=R2_parallel_mag*R1_cross_n_cross_n[0]
         R2_parallel_y=R2_parallel_mag*R1_cross_n_cross_n[1]
@@ -124,23 +141,15 @@ class Ball:
         BPx=BC[0]-RdotBC*Rx
         BPy=BC[1]-RdotBC*Ry
         BPz=BC[2]-RdotBC*Rz
-        magBP=BPx**2+BPy**2+BPz**2
 
         # If ray intersects ball
-        #intersects_ball=magBP <= self.radius**2
-        #print(intersects_ball.shape)
+        #magBP2=Magnitude2([BPx, BPy, BPz])
+        #intersects_ball=magBP2 <= self.radius**2
 
         # Lowest of two lambda values for location where rays intersect with surface of ball
-        #beta=np.sqrt(RdotBC**2-np.linalg.norm(BC)**2+self.radius**2) # Second term of quadratic eqn soln
-        beta=np.sqrt(RdotBC**2-(BC[0]**2+BC[1]**2+BC[2]**2)+self.radius**2) # Second term of quadratic eqn soln
-        #print(beta.shape)
+        beta=np.sqrt(RdotBC**2-Magnitude2(BC)+self.radius**2) # Second term of quadratic eqn soln
         lambda_ball=-RdotBC-beta
-        #if not np.array_equal(intersects_ball[wok], np.isfinite(beta[wok])):
-        #    print(np.isfinite(beta).astype(int)-intersects_ball.astype(int))
-        #    print(lambda_ball)
-        #    raise RuntimeError("Expected intersections tests to be identical") # Sanity check
         intersects_ball=np.isfinite(lambda_ball) & (lambda_ball>0)
-        #print(intersects_ball)
 
         return intersects_ball, lambda_ball
 
