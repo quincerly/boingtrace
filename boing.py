@@ -53,8 +53,8 @@ def Magnitude(V):
     return np.sqrt(Magnitude2(V))
 
 """Return vector V/Magnitude(V)."""
-def NormaliseVector(V):
-    mag=Magnitude(V[0], V[1], V[2])
+def NormalisedVector(V):
+    mag=Magnitude(V)
     return V[0]/mag, V[1]/mag, V[2]/mag
 
 """Return vector A-B."""
@@ -77,7 +77,6 @@ class Light:
 
         # Illumination of surface by light 1/R2 law and projection effect of angle
         lfac=cosalpha/magd2
-        lfac/=np.nanmax(lfac) # Normalise so max is 1
 
         # If normal not pointing towards light then no illumination
         lfac[lfac<0]=0
@@ -100,7 +99,7 @@ class Ground:
 
         return intersects_ground, lambda_ground
 
-    def image(self, ground_points, light, intersects_ground_first):
+    def image(self, ground_points, light, is_ground):
         # ground_points = points of intersection of rays with ground
         Gx, Gy, Gz=ground_points
 
@@ -108,7 +107,7 @@ class Ground:
 
         ix=np.floor(Gx/self.dx).astype(int)
         iy=np.floor(Gy/self.dy).astype(int)
-        ground=intersects_ground_first*np.mod(ix+iy, 2)*lfac
+        ground=is_ground*np.mod(ix+iy, 2)*lfac
 
         ground_image=ImageToRGB(ground, rgb=[0, 0.3, 0], rgb0=[0, 0, 0])
         return ground_image
@@ -146,10 +145,6 @@ class Ball:
         BPy=BC[1]-RdotBC*Ry
         BPz=BC[2]-RdotBC*Rz
 
-        # If ray intersects ball
-        #magBP2=Magnitude2([BPx, BPy, BPz])
-        #intersects_ball=magBP2 <= self.radius**2
-
         # Lowest of two lambda values for location where rays intersect with surface of ball
         beta=np.sqrt(RdotBC**2-Magnitude2(BC)+self.radius**2) # Second term of quadratic eqn soln
         lambda_ball=-RdotBC-beta
@@ -157,7 +152,7 @@ class Ball:
 
         return intersects_ball, lambda_ball
 
-    def image(self, S_points, light, intersects_ball_first):
+    def image(self, S_points, light, is_ball):
         # S_points = first (closest to camera) points where ray intersects surface of ball
         Sx, Sy, Sz=S_points
 
@@ -174,10 +169,10 @@ class Ball:
         # Pattern on ball
         iphi=np.floor(phi/self.dphi).astype(int)
         itheta=np.floor(theta/self.dtheta).astype(int)
-        w_noball=np.where(np.logical_not(intersects_ball_first))
-        red_ball=intersects_ball_first*np.mod(iphi+itheta, 2)*lfac
+        w_noball=np.where(np.logical_not(is_ball))
+        red_ball=is_ball*np.mod(iphi+itheta, 2)*lfac
         red_ball[w_noball]=0
-        white_ball=intersects_ball_first*np.mod(iphi+itheta+1, 2)*lfac
+        white_ball=is_ball*np.mod(iphi+itheta+1, 2)*lfac
         white_ball[w_noball]=0
 
         red_ballimage=ImageToRGB(red_ball, rgb=[1, 0, 0], rgb0=[0, 0, 0])
@@ -185,7 +180,7 @@ class Ball:
 
         return red_ballimage+white_ballimage
 
-def Boing():
+def Boing(light_theta_deg=60, light_phi_deg=80, light_dr=20):
 
     #
     #  Z
@@ -199,13 +194,13 @@ def Boing():
     #  |/_______________ X
     #
 
-    light=Light(np.array([10, 130, 5]))
-    #light=Light(np.array([10, 130, 100]))
-    #light=Light(np.array([100, 130, 100]))
-    #ground=Ground(point=np.array([0, 0, -5]), normal=np.array([0, 0, 1]), dx=3, dy=10)
-    #ground=Ground(point=np.array([0, 0, -5]), normal=np.array([0, 0, 1]), dx=1, dy=2)
+    #light=Light(np.array([10, 130, 5]))
     ground=Ground(point=np.array([0, 0, -5]), normal=np.array([0, 0, 1]), dx=1.5, dy=5)
     ball=Ball(centre=np.array([0, 150, -1.5]), radius=5)
+    light_dx=light_dr*np.sin(light_theta_deg*np.pi/180)*np.cos((light_phi_deg-90)*np.pi/180)
+    light_dy=light_dr*np.sin(light_theta_deg*np.pi/180)*np.sin((light_phi_deg-90)*np.pi/180)
+    light_dz=light_dr*np.cos(light_theta_deg*np.pi/180)
+    light=Light(np.array([ball.centre[0]+light_dx, ball.centre[1]+light_dy, ball.centre[2]+light_dz]))
     ground_reflectivity=0.3
     camera_location=np.array([0, 0, 0]) # Camera location
 
@@ -213,8 +208,8 @@ def Boing():
     h=500 # Image pixel grid height
     #w=16
     #h=16
-    thetaHr=np.array([-1, 1])*7/100 # Horizontal image physical range (radians) 
-    thetaVr=np.array([-1, 1])*7/100 # Vertical image physical range (radians) 
+    thetaHr=1*np.array([-1, 1])*7/100 # Horizontal image physical range (radians) 
+    thetaVr=1*np.array([-1, 1])*7/100 # Vertical image physical range (radians) 
     thetaH, thetaV=ImageGrid(w, h, xr=thetaHr, yr=thetaVr) # Angle at each image location (radians)
 
     tan_thetaH=np.tan(thetaH)
@@ -240,11 +235,16 @@ def Boing():
     ground_reflects_ball, ground_ball_reflection_lambda=ball.check(ground_points, Rref[0], Rref[1], Rref[2])
     ground_ball_reflection_points=PointOnLine(ground_ball_reflection_lambda, ground_points, Rref)
 
+    GL=NormalisedVector(DiffVectors(light.location, ground_points))
+    ball_shadows_ground, dum=ball.check(ground_points, GL[0], GL[1], GL[2])
+
+    is_ball=intersects_ball_first
+    is_ground=intersects_ground_first & np.logical_not(ball_shadows_ground)
+
     ground_image=ground.image(ground_points,
-                              light, intersects_ground_first)
+                              light, is_ground)
     ball_image=ball.image(PointOnLine(ball_lambda, camera_location, [Rx, Ry, Rz]),
-                          light, intersects_ball_first)
-    #ground_image[ground_reflects_ball]*=(1.-ground_reflectivity)
+                          light, is_ball)
     ground_ball_reflection_image=ball.image(ground_ball_reflection_points, light, ground_reflects_ball)
 
     # Plot it
