@@ -32,6 +32,12 @@ def Cross(ax, ay, az, bx, by, bz):
 def PointOnLine(lmbda, A, B):
     return A[0]+lmbda*B[0], A[1]+lmbda*B[1], A[2]+lmbda*B[2]
 
+def ImNorm(image):
+    fac=1
+    if image.max()>1:
+        fac=1./image.max()
+    return image*fac
+
 class Light:
     def __init__(self, location):
         self.location=location
@@ -186,9 +192,10 @@ def Boing():
     #light=Light(np.array([10, 130, 100]))
     #light=Light(np.array([100, 130, 100]))
     #ground=Ground(point=np.array([0, 0, -5]), normal=np.array([0, 0, 1]), dx=3, dy=10)
-    ground=Ground(point=np.array([0, 0, -5]), normal=np.array([0, 0, 1]), dx=1, dy=2)
+    #ground=Ground(point=np.array([0, 0, -5]), normal=np.array([0, 0, 1]), dx=1, dy=2)
+    ground=Ground(point=np.array([0, 0, -5]), normal=np.array([0, 0, 1]), dx=1.5, dy=5)
     ball=Ball(centre=np.array([0, 150, -1.5]), radius=5)
-    ground_reflectivity=0.2
+    ground_reflectivity=0.3
     camera_location=np.array([0, 0, 0]) # Camera location
 
     w=500 # Image pixel grid width
@@ -226,7 +233,7 @@ def Boing():
                               light, intersects_ground_first)
     ball_image=ball.image(PointOnLine(ball_lambda, camera_location, [Rx, Ry, Rz]),
                           light, intersects_ball_first)
-    ground_image[ground_reflects_ball]*=(1.-ground_reflectivity)
+    #ground_image[ground_reflects_ball]*=(1.-ground_reflectivity)
     ground_ball_reflection_image=ball.image(ground_ball_reflection_points, light, ground_reflects_ball)
 
     # Plot it
@@ -237,7 +244,7 @@ def Boing():
     ax.set_xticks([])
     ax.set_yticks([])
     ax.set_title("BoingTrace - Python/NumPy toy ray tracer")
-    ax.imshow(ball_image+ground_image+ground_ball_reflection_image*ground_reflectivity,
+    ax.imshow(ImNorm(ball_image+ground_image+ground_ball_reflection_image*ground_reflectivity),
               interpolation='nearest',
               extent=[thetaHr[0], thetaHr[1], thetaVr[0], thetaVr[1]],
               origin='lower')
