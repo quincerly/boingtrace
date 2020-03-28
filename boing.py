@@ -73,9 +73,9 @@ class Ground:
 
         return intersects_ground, lambda_ground
 
-    def image(self, G_points, light, intersects_ground_first):
-        # G_points = points of intersection of rays with ground
-        Gx, Gy, Gz=G_points
+    def image(self, ground_points, light, intersects_ground_first):
+        # ground_points = points of intersection of rays with ground
+        Gx, Gy, Gz=ground_points
 
         lfac=light.illuminate(Gx, Gy, Gz, self.n[0], self.n[1], self.n[2]) 
 
@@ -109,8 +109,9 @@ class Ball:
         self.dtheta=dtheta
 
     def check(self, C, Rx, Ry, Rz):
-        BC=C-self.centre
+        BC=C[0]-self.centre[0], C[1]-self.centre[1], C[2]-self.centre[2]
 
+        wok=np.where(np.isfinite(Rx+BC[0]+Ry+BC[1]+Rz+BC[2]))
         RdotBC=Rx*BC[0]+Ry*BC[1]+Rz*BC[2]
 
         # P = point of closest approach of ray to B
@@ -120,13 +121,20 @@ class Ball:
         magBP=BPx**2+BPy**2+BPz**2
 
         # If ray intersects ball
-        intersects_ball=magBP <= self.radius**2
+        #intersects_ball=magBP <= self.radius**2
+        #print(intersects_ball.shape)
 
         # Lowest of two lambda values for location where rays intersect with surface of ball
-        beta=np.sqrt(RdotBC**2-np.linalg.norm(BC)**2+self.radius**2) # Second term of quadratic eqn soln
-        if not np.array_equal(intersects_ball, np.isfinite(beta)):
-            raise RuntimeError("Expected intersections tests to be identical") # Sanity check
+        #beta=np.sqrt(RdotBC**2-np.linalg.norm(BC)**2+self.radius**2) # Second term of quadratic eqn soln
+        beta=np.sqrt(RdotBC**2-(BC[0]**2+BC[1]**2+BC[2]**2)+self.radius**2) # Second term of quadratic eqn soln
+        #print(beta.shape)
         lambda_ball=-RdotBC-beta
+        #if not np.array_equal(intersects_ball[wok], np.isfinite(beta[wok])):
+        #    print(np.isfinite(beta).astype(int)-intersects_ball.astype(int))
+        #    print(lambda_ball)
+        #    raise RuntimeError("Expected intersections tests to be identical") # Sanity check
+        intersects_ball=np.isfinite(lambda_ball) & (lambda_ball>0)
+        #print(intersects_ball)
 
         return intersects_ball, lambda_ball
 
@@ -162,11 +170,6 @@ class Ball:
 
 def Boing():
 
-    size_cm=(29.7, 21.0)
-    fig=plt.figure(figsize=(size_cm[0]/2.54, size_cm[1]/2.54))
-    ax=fig.add_subplot(1, 1, 1)
-    ax.set_aspect(1)
-
     #
     #  Z
     #  |
@@ -180,23 +183,21 @@ def Boing():
     #
 
     light=Light(np.array([10, 130, 5]))
-    ground=Ground(point=np.array([0, 0, -5]), normal=np.array([0, 0, 1]))
+    #light=Light(np.array([10, 130, 100]))
+    #light=Light(np.array([100, 130, 100]))
+    #ground=Ground(point=np.array([0, 0, -5]), normal=np.array([0, 0, 1]), dx=3, dy=10)
+    ground=Ground(point=np.array([0, 0, -5]), normal=np.array([0, 0, 1]), dx=1, dy=2)
     ball=Ball(centre=np.array([0, 150, -1.5]), radius=5)
-
+    ground_reflectivity=0.2
     C=np.array([0, 0, 0]) # Camera location
 
-    w=2000
-    h=2000
-
-    #w=160
-    #h=160
-    thetaHr=np.array([-1, 1])*7/100
-    thetaVr=np.array([-1, 1])*7/100
+    w=500 # Image pixel grid width
+    h=500 # Image pixel grid height
+    #w=16
+    #h=16
+    thetaHr=np.array([-1, 1])*7/100 # Horizontal image physical range (radians) 
+    thetaVr=np.array([-1, 1])*7/100 # Vertical image physical range (radians) 
     thetaH, thetaV=ImageGrid(w, h, xr=thetaHr, yr=thetaVr) # Angle at each image location (radians)
-
-    #zoom_sigma=3
-    #zoom_amp=3
-    #thetaH, thetaV+=zoom_amp*np.exp(-(thetaH**2+thetaV**2)/2*zoom_sigma^2)
 
     tan_thetaH=np.tan(thetaH)
     tan_thetaV=np.tan(thetaV)
@@ -217,14 +218,26 @@ def Boing():
 
     Rref=ground.reflect(Rx, Ry, Rz)
 
-    G_points=PointOnLine(ground_lambda, C, [Rx, Ry, Rz])
-    ground_image=ground.image(G_points,
+    ground_points=PointOnLine(ground_lambda, C, [Rx, Ry, Rz])
+    ground_reflects_ball, ground_ball_reflection_lambda=ball.check(ground_points, Rref[0], Rref[1], Rref[2])
+    ground_ball_reflection_points=PointOnLine(ground_ball_reflection_lambda, ground_points, Rref)
+
+    ground_image=ground.image(ground_points,
                               light, intersects_ground_first)
     ball_image=ball.image(PointOnLine(ball_lambda, C, [Rx, Ry, Rz]),
                           light, intersects_ball_first)
+    ground_image[ground_reflects_ball]*=(1.-ground_reflectivity)
+    ground_ball_reflection_image=ball.image(ground_ball_reflection_points, light, ground_reflects_ball)
 
-
-    ax.imshow(ball_image+ground_image,
+    # Plot it
+    size_cm=(29.7, 21.0)
+    fig=plt.figure(figsize=(size_cm[0]/2.54, size_cm[1]/2.54))
+    ax=fig.add_subplot(1, 1, 1)
+    ax.set_aspect(1)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_title("BoingTrace - Python/NumPy toy ray tracer")
+    ax.imshow(ball_image+ground_image+ground_ball_reflection_image*ground_reflectivity,
               interpolation='nearest',
               extent=[thetaHr[0], thetaHr[1], thetaVr[0], thetaVr[1]],
               origin='lower')
