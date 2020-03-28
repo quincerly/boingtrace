@@ -32,6 +32,10 @@ def ImageToRGB(im, rgb0=[0, 0, 0], rgb=[0, 1, 0]):
 def Cross(A, B):
     return A[1]*B[2]-B[1]*A[2], A[2]*B[0]-B[2]*A[0], A[0]*B[1]-B[0]*A[1]
 
+"""Return vector dot product A * B of vectors A, B."""
+def Dot(A, B):
+    return A[0]*B[0]+A[1]*B[1]+A[2]*B[2]
+
 """Return vector V = A + lmbda * B where lmbda is scalar (can be ndarray for elementwise calculation)."""
 def PointOnLine(lmbda, A, B):
     return A[0]+lmbda*B[0], A[1]+lmbda*B[1], A[2]+lmbda*B[2]
@@ -54,22 +58,22 @@ def NormaliseVector(V):
     return V[0]/mag, V[1]/mag, V[2]/mag
 
 """Return vector A-B."""
-def DiffVector(A, B):
+def DiffVectors(A, B):
     return A[0]-B[0], A[1]-B[1], A[2]-B[2]
 
 class Light:
     def __init__(self, location):
         self.location=location
 
-    def illuminate(self, x, y, z, nx, ny, nz):
+    def illuminate(self, location, normal):
         # d
-        dx, dy, dz=DiffVector(self.location, [x, y, z])
+        dx, dy, dz=DiffVectors(self.location, location)
         magd2=Magnitude2([dx, dy, dz])
         magd=np.sqrt(magd2)
-        magn=Magnitude([nx, ny, nz])
+        magn=Magnitude(normal)
 
         # alpha = angle between normal to surface (outwards) and line from surface to L
-        cosalpha=(nx*dx+ny*dy+nz*dz)/(magd*magn)
+        cosalpha=Dot(normal, [dx, dy, dz])/(magd*magn)
 
         # Illumination of surface by light 1/R2 law and projection effect of angle
         lfac=cosalpha/magd2
@@ -89,7 +93,7 @@ class Ground:
 
     def check(self, camera_location, Rx, Ry, Rz):
         # Lambda for where ray intersects ground
-        lambda_ground=np.sum((self.o-camera_location)*self.n)/(Rx*self.n[0]+Ry*self.n[1]+Rz*self.n[2])
+        lambda_ground=Dot(DiffVectors(self.o, camera_location), self.n)/Dot([Rx, Ry, Rz], self.n)
 
         # If ray intersects ground
         intersects_ground=(lambda_ground > 0) & np.isfinite(lambda_ground)
@@ -100,7 +104,7 @@ class Ground:
         # ground_points = points of intersection of rays with ground
         Gx, Gy, Gz=ground_points
 
-        lfac=light.illuminate(Gx, Gy, Gz, self.n[0], self.n[1], self.n[2]) 
+        lfac=light.illuminate([Gx, Gy, Gz], self.n) 
 
         ix=np.floor(Gx/self.dx).astype(int)
         iy=np.floor(Gy/self.dy).astype(int)
@@ -109,15 +113,15 @@ class Ground:
         ground_image=ImageToRGB(ground, rgb=[0, 0.3, 0], rgb0=[0, 0, 0])
         return ground_image
 
-    def reflect(self, R1x, R1y, R1z):
-        R2_perp_mag=-(R1x*self.n[0]+R1y*self.n[1]+R1z*self.n[2])
+    def reflect(self, R1):
+        R2_perp_mag=-Dot(R1, self.n)
         R2_perp_x=R2_perp_mag*self.n[0]
         R2_perp_y=R2_perp_mag*self.n[1]
         R2_perp_z=R2_perp_mag*self.n[2]
-        R1_mag2=Magnitude2([R1x, R1y, R1z])
-        R1_cross_n=Cross([R1x/R1_mag2, R1y/R1_mag2, R1z/R1_mag2], self.n)
+        R1_mag2=Magnitude2(R1)
+        R1_cross_n=Cross([R1[0]/R1_mag2, R1[1]/R1_mag2, R1[2]/R1_mag2], self.n)
         R1_cross_n_cross_n=Cross(R1_cross_n, self.n)
-        R2_parallel_mag=(R1x*R1_cross_n_cross_n[0]+R1y*R1_cross_n_cross_n[1]+R1z*R1_cross_n_cross_n[2])
+        R2_parallel_mag=Dot(R1, R1_cross_n_cross_n)
         R2_parallel_x=R2_parallel_mag*R1_cross_n_cross_n[0]
         R2_parallel_y=R2_parallel_mag*R1_cross_n_cross_n[1]
         R2_parallel_z=R2_parallel_mag*R1_cross_n_cross_n[2]
@@ -164,10 +168,8 @@ class Ball:
         phi=np.arctan2(SBy, SBx)
         theta=np.arctan2(SBz, np.sqrt(SBx**2+SBy**2))
 
-        lfac=light.illuminate(Sx, Sy, Sz,
-                              SBx,
-                              SBy,
-                              SBz)
+        lfac=light.illuminate([Sx, Sy, Sz],
+                              [SBx, SBy, SBz])
 
         # Pattern on ball
         iphi=np.floor(phi/self.dphi).astype(int)
@@ -232,7 +234,7 @@ def Boing():
     intersects_ball_first=intersects_ball_only | (intersects_ball_and_ground & (ball_lambda <= ground_lambda))
     intersects_ground_first=intersects_ground_only | (intersects_ball_and_ground & (ball_lambda > ground_lambda))
 
-    Rref=ground.reflect(Rx, Ry, Rz) # Camera ray directions reflected by the ground
+    Rref=ground.reflect([Rx, Ry, Rz]) # Camera ray directions reflected by the ground
 
     ground_points=PointOnLine(ground_lambda, camera_location, [Rx, Ry, Rz])
     ground_reflects_ball, ground_ball_reflection_lambda=ball.check(ground_points, Rref[0], Rref[1], Rref[2])
