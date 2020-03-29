@@ -7,6 +7,9 @@ Tools for common plotting actions
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
+import matplotlib.animation as animation
+import subprocess
+import os
 
 """Return x and y images corresponding to mid-pixel positions of image of width w, height h covering ranges xr and yr. Default xr=[0, w], yr=[0, h]"""
 def ImageGrid(w, h, xr=None, yr=None):
@@ -180,7 +183,11 @@ class Ball:
 
         return red_ballimage+white_ballimage
 
-def Boing(light_theta_deg=60, light_phi_deg=80, light_dr=20):
+def Boing(thetaHr=1*np.array([-1, 1])*7/100, # Horizontal image physical range (radians) 
+          thetaVr=1*np.array([-1, 1])*7/100, # Vertical image physical range (radians) 
+          w=500, # Image pixel grid width
+          h=500, # Image pixel grid height
+          light_theta_deg=30, light_phi_deg=80, light_dr=50):
 
     #
     #  Z
@@ -195,21 +202,16 @@ def Boing(light_theta_deg=60, light_phi_deg=80, light_dr=20):
     #
 
     #light=Light(np.array([10, 130, 5]))
-    ground=Ground(point=np.array([0, 0, -5]), normal=np.array([0, 0, 1]), dx=1.5, dy=5)
-    ball=Ball(centre=np.array([0, 150, -1.5]), radius=5)
+    ground=Ground(point=np.array([0, 0, -5]), normal=np.array([0, 0, 1]), dx=3, dy=3)
+    #ball=Ball(centre=np.array([0, 150, 1.5]), radius=5)
+    ball=Ball(centre=np.array([0, 150, 0]), radius=5)
     light_dx=light_dr*np.sin(light_theta_deg*np.pi/180)*np.cos((light_phi_deg-90)*np.pi/180)
     light_dy=light_dr*np.sin(light_theta_deg*np.pi/180)*np.sin((light_phi_deg-90)*np.pi/180)
     light_dz=light_dr*np.cos(light_theta_deg*np.pi/180)
     light=Light(np.array([ball.centre[0]+light_dx, ball.centre[1]+light_dy, ball.centre[2]+light_dz]))
-    ground_reflectivity=0.3
+    ground_reflectivity=0.5
     camera_location=np.array([0, 0, 0]) # Camera location
 
-    w=500 # Image pixel grid width
-    h=500 # Image pixel grid height
-    #w=16
-    #h=16
-    thetaHr=1*np.array([-1, 1])*7/100 # Horizontal image physical range (radians) 
-    thetaVr=1*np.array([-1, 1])*7/100 # Vertical image physical range (radians) 
     thetaH, thetaV=ImageGrid(w, h, xr=thetaHr, yr=thetaVr) # Angle at each image location (radians)
 
     tan_thetaH=np.tan(thetaH)
@@ -247,23 +249,52 @@ def Boing(light_theta_deg=60, light_phi_deg=80, light_dr=20):
                           light, is_ball)
     ground_ball_reflection_image=ball.image(ground_ball_reflection_points, light, ground_reflects_ball)
 
+    return ImNorm(ball_image+ground_image+ground_ball_reflection_image*ground_reflectivity)
+
+if __name__ == "__main__":
+
+    w=640
+    h=512
+    thetaHr=1.2*np.array([-1, 1])*7/100 # Horizontal image physical range (radians) 
+    thetaVr=1.2*np.array([-1, 1])*7/100*h/w # Vertical image physical range (radians) 
+
     # Plot it
     size_cm=(29.7, 21.0)
     fig=plt.figure(figsize=(size_cm[0]/2.54, size_cm[1]/2.54))
     ax=fig.add_subplot(1, 1, 1)
-    ax.set_aspect(1)
+    ax.set_aspect('equal')
     ax.set_xticks([])
     ax.set_yticks([])
-    ax.set_title("BoingTrace - Python/NumPy toy ray tracer")
-    ax.imshow(ImNorm(ball_image+ground_image+ground_ball_reflection_image*ground_reflectivity),
-              interpolation='nearest',
-              extent=[thetaHr[0], thetaHr[1], thetaVr[0], thetaVr[1]],
-              origin='lower')
+    plt.ion()
+    phis=np.arange(0, 360, 3)
 
+    im=ax.imshow(Boing(light_phi_deg=phis[0],
+                       light_theta_deg=60,
+                       light_dr=50,
+                       thetaHr=thetaHr, thetaVr=thetaVr,
+                       w=w, h=h),
+                 interpolation='nearest',
+                 extent=[thetaHr[0], thetaHr[1], thetaVr[0], thetaVr[1]],
+                 origin='lower')
 
-    plt.show()
+    plt.show(block=False)
+    iframe=0
+    tmpframes=[]
+    for phi in phis:
+        ax.set_title("BoingTrace - Python/NumPy toy ray tracer {:03.0f}".format(phi))
+        im.set_array(Boing(light_phi_deg=phi,
+                           light_theta_deg=60,
+                           light_dr=50,
+                           thetaHr=thetaHr, thetaVr=thetaVr,
+                           w=w, h=h))
+        plt.draw()
+        plt.pause(0.001)
+        framename="tmpboingframe{:03d}.png".format(iframe)
+        plt.savefig(framename)
+        tmpframes+=[framename]
+        print("Wrote "+framename)
+        iframe+=1
 
-if __name__ == "__main__":
-
-    #Example()
-    Boing()
+    output=subprocess.check_output(["ffmpeg", "-i", "tmpboingframe%3d.png", "boing.mp4"])
+    for framename in tmpframes:
+        os.remove(framename)
