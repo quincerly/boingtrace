@@ -131,11 +131,12 @@ class Ground:
         return R2
 
 class Ball:
-    def __init__(self, centre, radius, dphi=np.pi/10, dtheta=np.pi/10):
+    def __init__(self, centre, radius, dphi=np.pi/10, dtheta=np.pi/10, phi0=0):
         self.centre=centre
         self.radius=radius
         self.dphi=dphi
         self.dtheta=dtheta
+        self.phi0=phi0
 
     def check(self, camera_location, Rx, Ry, Rz):
         BC=camera_location[0]-self.centre[0], camera_location[1]-self.centre[1], camera_location[2]-self.centre[2]
@@ -170,7 +171,7 @@ class Ball:
                               [SBx, SBy, SBz])
 
         # Pattern on ball
-        iphi=np.floor(phi/self.dphi).astype(int)
+        iphi=np.floor((phi-self.phi0)/self.dphi).astype(int)
         itheta=np.floor(theta/self.dtheta).astype(int)
         w_noball=np.where(np.logical_not(is_ball))
         red_ball=is_ball*np.mod(iphi+itheta, 2)*lfac
@@ -183,11 +184,13 @@ class Ball:
 
         return red_ballimage+white_ballimage
 
-def Boing(thetaHr=1*np.array([-1, 1])*7/100, # Horizontal image physical range (radians) 
-          thetaVr=1*np.array([-1, 1])*7/100, # Vertical image physical range (radians) 
-          w=500, # Image pixel grid width
-          h=500, # Image pixel grid height
-          light_theta_deg=30, light_phi_deg=80, light_dr=50):
+def Render(thetaHr=1*np.array([-1, 1])*7/100, # Horizontal image physical range (radians) 
+           thetaVr=1*np.array([-1, 1])*7/100, # Vertical image physical range (radians) 
+           w=500, # Image pixel grid width
+           h=500, # Image pixel grid height
+           light_theta_deg=30, light_phi_deg=80, light_dr=50, light_z=None,
+           ball_z=0, ball_phi0=0.,
+           theta_noise=0,):
 
     #
     #  Z
@@ -204,16 +207,22 @@ def Boing(thetaHr=1*np.array([-1, 1])*7/100, # Horizontal image physical range (
     #light=Light(np.array([10, 130, 5]))
     ground=Ground(point=np.array([0, 0, -5]), normal=np.array([0, 0, 1]), dx=3, dy=3)
     #ball=Ball(centre=np.array([0, 150, 1.5]), radius=5)
-    ball=Ball(centre=np.array([0, 150, 0]), radius=5)
+    ball=Ball(centre=np.array([0, 150, ball_z]), radius=5, phi0=ball_phi0)
     light_dx=light_dr*np.sin(light_theta_deg*np.pi/180)*np.cos((light_phi_deg-90)*np.pi/180)
     light_dy=light_dr*np.sin(light_theta_deg*np.pi/180)*np.sin((light_phi_deg-90)*np.pi/180)
     light_dz=light_dr*np.cos(light_theta_deg*np.pi/180)
-    light=Light(np.array([ball.centre[0]+light_dx, ball.centre[1]+light_dy, ball.centre[2]+light_dz]))
-    ground_reflectivity=0.5
-    camera_location=np.array([0, 0, 0]) # Camera location
+    light=Light(np.array([ball.centre[0]+light_dx,
+                          ball.centre[1]+light_dy,
+                          light_z if light_z is not None else ball.centre[2]+light_dz]))
+    ground_reflectivity=0.75
+    camera_location=np.array([0, 0, 20]) # Camera location
 
     thetaH, thetaV=ImageGrid(w, h, xr=thetaHr, yr=thetaVr) # Angle at each image location (radians)
 
+    thetaHscale=(thetaHr.max()-thetaHr.min())/w
+    thetaVscale=(thetaVr.max()-thetaVr.min())/h
+    thetaH+=np.random.normal(size=thetaH.shape)*thetaHscale*theta_noise
+    thetaV+=np.random.normal(size=thetaV.shape)*thetaVscale*theta_noise
     tan_thetaH=np.tan(thetaH)
     tan_thetaV=np.tan(thetaV)
 
@@ -256,41 +265,50 @@ if __name__ == "__main__":
     w=640
     h=512
     thetaHr=1.2*np.array([-1, 1])*7/100 # Horizontal image physical range (radians) 
-    thetaVr=1.2*np.array([-1, 1])*7/100*h/w # Vertical image physical range (radians) 
+    #thetaVr=1.2*np.array([-1, 1])*7/100*h/w-0.15 # Vertical image physical range (radians) 
+    thetaVr=1.2*np.array([-1, 1])*7/100*h/w-0.13 # Vertical image physical range (radians) 
 
     # Plot it
-    size_cm=(29.7, 21.0)
-    fig=plt.figure(figsize=(size_cm[0]/2.54, size_cm[1]/2.54))
-    ax=fig.add_subplot(1, 1, 1)
+    dpi=40
+    size_inches=(w/dpi, h/dpi)
+    fig=plt.figure(figsize=size_inches, dpi=dpi)
+    ax=fig.add_axes([0, 0, 1, 1])
     ax.set_aspect('equal')
     ax.set_xticks([])
     ax.set_yticks([])
     plt.ion()
-    phis=np.arange(0, 360, 3)
+    #times=np.arange(0, 1, 0.01)
+    times=np.arange(0, 1, 1/360)
+    phidegs=times*360
 
-    im=ax.imshow(Boing(light_phi_deg=phis[0],
-                       light_theta_deg=60,
-                       light_dr=50,
-                       thetaHr=thetaHr, thetaVr=thetaVr,
-                       w=w, h=h),
+    im=ax.imshow(Render(light_phi_deg=phidegs[0],
+                        light_theta_deg=30,
+                        light_dr=100,
+                        thetaHr=thetaHr, thetaVr=thetaVr,
+                        w=w, h=h),
                  interpolation='nearest',
                  extent=[thetaHr[0], thetaHr[1], thetaVr[0], thetaVr[1]],
                  origin='lower')
 
     plt.show(block=False)
-    iframe=0
     tmpframes=[]
-    for phi in phis:
-        ax.set_title("BoingTrace - Python/NumPy toy ray tracer {:03.0f}".format(phi))
-        im.set_array(Boing(light_phi_deg=phi,
-                           light_theta_deg=60,
-                           light_dr=50,
-                           thetaHr=thetaHr, thetaVr=thetaVr,
-                           w=w, h=h))
+    for iframe in range(len(times)):
+        phideg=phidegs[iframe]
+        im.set_array(Render(w=w, h=h,
+                            #light_phi_deg=phideg,
+                            light_phi_deg=90*np.sin(3*phideg/180*np.pi),
+                            light_theta_deg=45+30*np.cos(4*phideg/180*np.pi),
+                            #light_theta_deg=60,
+                            light_dr=10+30*np.sin(3*phideg/180*np.pi)**2,
+                            #light_z=5,
+                            ball_z=5*np.sin(phideg/180*np.pi)**2,
+                            ball_phi0=phideg/180*np.pi,
+                            thetaHr=thetaHr, thetaVr=thetaVr+0.02*np.sin(3*phideg/180*np.pi)**2,
+        ))
         plt.draw()
         plt.pause(0.001)
         framename="tmpboingframe{:03d}.png".format(iframe)
-        plt.savefig(framename)
+        plt.savefig(framename, dpi=dpi)
         tmpframes+=[framename]
         print("Wrote "+framename)
         iframe+=1
